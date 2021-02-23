@@ -1981,7 +1981,7 @@ public:
 	}
 
 	ACTOR static Future<Void> deleteContainer_impl(Reference<BackupContainerBlobStore> bc, int *pNumDeleted) {
-		bool e = wait(bc->exists());
+		bool e = true; //wait(bc->exists());
 		if(!e) {
 			TraceEvent(SevWarnAlways, "BackupContainerDoesNotExist").detail("URL", bc->getURL());
 			throw backup_does_not_exist();
