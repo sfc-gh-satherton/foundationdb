@@ -3156,8 +3156,8 @@ struct BTreePage {
 	std::string toString(bool write,
 	                     BTreePageIDRef id,
 	                     Version ver,
-	                     const RedwoodRecordRef* lowerBound,
-	                     const RedwoodRecordRef* upperBound) const {
+	                     const RedwoodRecordRef& lowerBound,
+	                     const RedwoodRecordRef& upperBound) const {
 		std::string r;
 		r += format("BTreePage op=%s %s @%" PRId64
 		            " ptr=%p height=%d count=%d kvBytes=%d\n  lowerBound: %s\n  upperBound: %s\n",
@@ -3168,13 +3168,13 @@ struct BTreePage {
 		            height,
 		            (int)tree().numItems,
 		            (int)kvBytes,
-		            lowerBound->toString(false).c_str(),
-		            upperBound->toString(false).c_str());
+		            lowerBound.toString(false).c_str(),
+		            upperBound.toString(false).c_str());
 		try {
 			if (tree().numItems > 0) {
 				// This doesn't use the cached reader for the page because it is only for debugging purposes,
 				// a cached reader may not exist
-				BinaryTree::DecodeCache cache(*lowerBound, *upperBound);
+				BinaryTree::DecodeCache cache(lowerBound, upperBound);
 				BinaryTree::Cursor c(&cache, &tree());
 
 				c.moveFirst();
@@ -3185,8 +3185,8 @@ struct BTreePage {
 					r += "  ";
 					r += c.get().toString(height == 1);
 
-					bool tooLow = c.get().withoutValue() < lowerBound->withoutValue();
-					bool tooHigh = c.get().withoutValue() >= upperBound->withoutValue();
+					bool tooLow = c.get().withoutValue() < lowerBound.withoutValue();
+					bool tooHigh = c.get().withoutValue() >= upperBound.withoutValue();
 					if (tooLow || tooHigh) {
 						anyOutOfRange = true;
 						if (tooLow) {
@@ -3451,7 +3451,7 @@ public:
 				}
 				// Start reading the page, without caching
 				entries.push_back(
-				    std::make_pair(q.get(), self->readPage(snapshot, q.get().pageID, nullptr, nullptr, true, false)));
+				    std::make_pair(q.get(), self->readPage(snapshot, q.get().pageID, dbBegin, dbEnd, true, false)));
 
 				--toPop;
 			}
@@ -4274,8 +4274,8 @@ private:
 
 	ACTOR static Future<Reference<const ArenaPage>> readPage(Reference<IPagerSnapshot> snapshot,
 	                                                         BTreePageIDRef id,
-	                                                         const RedwoodRecordRef* lowerBound,
-	                                                         const RedwoodRecordRef* upperBound,
+	                                                         RedwoodRecordRef lowerBound,
+	                                                         RedwoodRecordRef upperBound,
 	                                                         bool forLazyClear = false,
 	                                                         bool cacheable = true,
 	                                                         bool* fromCache = nullptr) {
@@ -4283,8 +4283,8 @@ private:
 			debug_printf("readPage() op=read %s @%" PRId64 " lower=%s upper=%s\n",
 			             toString(id).c_str(),
 			             snapshot->getVersion(),
-			             lowerBound->toString(false).c_str(),
-			             upperBound->toString(false).c_str());
+			             lowerBound.toString(false).c_str(),
+			             upperBound.toString(false).c_str());
 		} else {
 			debug_printf(
 			    "readPage() op=readForDeferredClear %s @%" PRId64 " \n", toString(id).c_str(), snapshot->getVersion());
@@ -4323,11 +4323,10 @@ private:
 			debug_printf("readPage() Creating DecodeCache for %s @%" PRId64 " lower=%s upper=%s\n",
 			             toString(id).c_str(),
 			             snapshot->getVersion(),
-			             lowerBound->toString(false).c_str(),
-			             upperBound->toString(false).c_str());
+			             lowerBound.toString(false).c_str(),
+			             upperBound.toString(false).c_str());
 
-			BTreePage::BinaryTree::DecodeCache* cache =
-			    new BTreePage::BinaryTree::DecodeCache(*lowerBound, *upperBound);
+			BTreePage::BinaryTree::DecodeCache* cache = new BTreePage::BinaryTree::DecodeCache(lowerBound, upperBound);
 			cache->addref();
 			page->userData = cache;
 			page->userDataDestructor = [](void* cache) { ((BTreePage::BinaryTree::DecodeCache*)cache)->delref(); };
@@ -4710,7 +4709,7 @@ private:
 		state FlowLock::Releaser readLock(*commitReadLock);
 		state bool fromCache = false;
 		state Reference<const ArenaPage> page = wait(
-		    readPage(snapshot, rootID, &update->decodeLowerBound, &update->decodeUpperBound, false, false, &fromCache));
+		    readPage(snapshot, rootID, update->decodeLowerBound, update->decodeUpperBound, false, false, &fromCache));
 		readLock.release();
 
 		state BTreePage* btPage = (BTreePage*)page->begin();
@@ -4733,8 +4732,7 @@ private:
 		debug_printf(
 		    "%s commitSubtree(): %s\n",
 		    context.c_str(),
-		    btPage
-		        ->toString(false, rootID, snapshot->getVersion(), &update->decodeLowerBound, &update->decodeUpperBound)
+		    btPage->toString(false, rootID, snapshot->getVersion(), update->decodeLowerBound, update->decodeUpperBound)
 		        .c_str());
 
 		state BTreePage::BinaryTree::Cursor cursor = getCursor(page);
@@ -5291,8 +5289,8 @@ private:
 						        ->toString(false,
 						                   newID,
 						                   snapshot->getVersion(),
-						                   &update->decodeLowerBound,
-						                   &update->decodeUpperBound)
+						                   update->decodeLowerBound,
+						                   update->decodeUpperBound)
 						        .c_str());
 
 						update->updatedInPlace(newID, btPage, newID.size() * self->m_blockSize);
@@ -5507,23 +5505,23 @@ public:
 		PathEntry& back() { return path.back(); }
 		void popPath() { path.pop_back(); }
 
-#warning These can't be references anymore
 		Future<Void> pushPage(BTreePageIDRef id,
 		                      const RedwoodRecordRef& lowerBound,
 		                      const RedwoodRecordRef& upperBound) {
-
-			return map(readPage(pager, id, &lowerBound, &upperBound), [this, id](Reference<const ArenaPage> p) {
+			// The boundary RedwoodRecordRefs are shallow copied to readPage()'s argument / actor state variables,
+			// and the arenas for them must be kept alive by the higher path entries which contain ArenaPage
+			// references.
+			return map(readPage(pager, id, lowerBound, upperBound), [this, id](Reference<const ArenaPage> p) {
 				path.push_back({ p, getCursor(p) });
 				return Void();
 			});
 		}
 
 		Future<Void> pushPage(BTreePage::BinaryTree::Cursor c) {
-			RedwoodRecordRef rec = c.get();
 			auto next = c;
 			next.moveNext();
-			BTreePageIDRef id = rec.getChildPage();
-			return pushPage(id, rec, next.getOrUpperBound());
+			BTreePageIDRef id = c.get().getChildPage();
+			return pushPage(id, c.get(), next.getOrUpperBound());
 		}
 
 		Future<Void> init(VersionedBTree* btree_in, Reference<IPagerSnapshot> pager_in, BTreePageIDRef root) {
