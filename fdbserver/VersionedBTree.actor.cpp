@@ -4594,7 +4594,6 @@ private:
 			if (updating) {
 				// Update must be done in the new tree, not the original tree where the end cursor will be from
 				end.tree = btPage()->tree();
-				end.switchTree(btPage()->tree());
 
 				// TODO: insert recs in a random order to avoid new subtree being entirely right child links
 				while (i != recs.size()) {
@@ -4667,7 +4666,6 @@ private:
 						cloneForUpdate();
 						// must point c to the tree to erase from
 						c.tree = btPage()->tree();
-						c.switchTree(btPage()->tree());
 					}
 
 					while (c != u.cEnd) {
@@ -4862,7 +4860,6 @@ private:
 								pageCopy = clonePageForUpdate(page);
 								btPage = (BTreePage*)pageCopy->begin();
 								cursor.tree = btPage->tree();
-								cursor.switchTree(btPage->tree());
 							}
 
 							btPage->kvBytes -= cursor.get().kvBytes();
@@ -4892,7 +4889,6 @@ private:
 							pageCopy = clonePageForUpdate(page);
 							btPage = (BTreePage*)pageCopy->begin();
 							cursor.tree = btPage->tree();
-							cursor.switchTree(btPage->tree());
 						}
 
 						if (cursor.insert(rec, update->skipLen, maxHeightAllowed)) {
@@ -4956,7 +4952,6 @@ private:
 								pageCopy = clonePageForUpdate(page);
 								btPage = (BTreePage*)pageCopy->begin();
 								cursor.tree = btPage->tree();
-								cursor.switchTree(btPage->tree());
 							}
 
 							btPage->kvBytes -= cursor.get().kvBytes();
@@ -5001,7 +4996,6 @@ private:
 								pageCopy = clonePageForUpdate(page);
 								btPage = (BTreePage*)pageCopy->begin();
 								cursor.tree = btPage->tree();
-								cursor.switchTree(btPage->tree());
 							}
 
 							btPage->kvBytes -= cursor.get().kvBytes();
@@ -5307,7 +5301,6 @@ private:
 				pageCopy = modifier.page;
 				btPage = modifier.btPage();
 				cursor.tree = btPage->tree();
-				cursor.switchTree(btPage->tree());
 			}
 
 			// If page contents have changed
