@@ -1101,6 +1101,7 @@ public:
 	void setSizeLimit(int n) {
 		ASSERT(n > 0);
 		sizeLimit = n;
+		cache.reserve(n);
 	}
 
 	// Get the object for i if it exists, else return nullptr.
