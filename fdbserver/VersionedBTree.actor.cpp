@@ -496,6 +496,14 @@ public:
 			++self->queue->numEntries;
 
 			if (mustWait || needNewPage) {
+				// Prevent possible stack overflow if too many waiters which require no IO are queued up
+				// Using static because multiple Cursors can be involved
+				static int sinceYield = 0;
+				if (++sinceYield == 1000) {
+					sinceYield = 0;
+					wait(yield());
+				}
+
 				self->mutex.release();
 			}
 
@@ -531,10 +539,18 @@ public:
 				wait(success(self->nextPageReader));
 			}
 
-			Optional<T> result = wait(self->readNext(upperBound, true));
+			state Optional<T> result = wait(self->readNext(upperBound, true));
 
 			// If this actor instance locked the mutex, then unlock it.
 			if (!locked) {
+				// Prevent possible stack overflow if too many waiters which require no IO are queued up
+				// Using static because multiple Cursors can be involved
+				static int sinceYield = 0;
+				if (++sinceYield == 1000) {
+					sinceYield = 0;
+					wait(yield());
+				}
+
 				debug_printf("FIFOQueue::Cursor(%s) waitThenReadNext unlocking mutex\n", self->toString().c_str());
 				self->mutex.release();
 			}
@@ -2096,6 +2112,7 @@ public:
 				break;
 			}
 
+			// Yield to prevent slow task in case no IO waits are encountered
 			if (++sinceYield >= 100) {
 				sinceYield = 0;
 				wait(yield());
