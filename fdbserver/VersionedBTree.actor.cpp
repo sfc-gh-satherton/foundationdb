@@ -1351,7 +1351,8 @@ public:
 	          std::string filename,
 	          int64_t pageCacheSizeBytes,
 	          Version remapCleanupWindow,
-	          bool memoryOnly = false)
+	          bool memoryOnly = false,
+			  Promise<Void> errorPromise = {})
 	  : desiredPageSize(desiredPageSize), filename(filename), pHeader(nullptr), pageCacheBytes(pageCacheSizeBytes),
 	    memoryOnly(memoryOnly), remapCleanupWindow(remapCleanupWindow) {
 
@@ -5735,7 +5736,7 @@ RedwoodRecordRef VersionedBTree::dbEnd(LiteralStringRef("\xff\xff\xff\xff\xff"))
 class KeyValueStoreRedwoodUnversioned : public IKeyValueStore {
 public:
 	KeyValueStoreRedwoodUnversioned(std::string filePrefix, UID logID)
-	  : m_filePrefix(filePrefix), m_concurrentReads(new FlowLock(SERVER_KNOBS->REDWOOD_KVSTORE_CONCURRENT_READS)) {
+	  : m_filePrefix(filePrefix), m_concurrentReads(SERVER_KNOBS->REDWOOD_KVSTORE_CONCURRENT_READS) {
 
 		int pageSize =
 		    BUGGIFY ? deterministicRandom()->randomInt(1000, 4096 * 4) : SERVER_KNOBS->REDWOOD_DEFAULT_PAGE_SIZE;
@@ -5747,7 +5748,7 @@ public:
 		Version remapCleanupWindow =
 		    BUGGIFY ? deterministicRandom()->randomInt64(0, 1000) : SERVER_KNOBS->REDWOOD_REMAP_CLEANUP_WINDOW;
 
-		IPager2* pager = new DWALPager(pageSize, filePrefix, pageCacheBytes, remapCleanupWindow);
+		IPager2* pager = new DWALPager(pageSize, filePrefix, pageCacheBytes, remapCleanupWindow, false, m_error);
 		m_tree = new VersionedBTree(pager, filePrefix);
 		m_init = catchError(init_impl(this));
 	}
@@ -5823,9 +5824,8 @@ public:
 		state VersionedBTree::BTreeCursor cur;
 		wait(self->m_tree->initBTreeCursor(&cur, self->m_tree->getLastCommittedVersion()));
 
-		state Reference<FlowLock> readLock = self->m_concurrentReads;
-		wait(readLock->take());
-		state FlowLock::Releaser releaser(*readLock);
+		wait(self->m_concurrentReads.take());
+		state FlowLock::Releaser releaser(self->m_concurrentReads);
 		++g_redwoodMetrics.opGetRange;
 
 		state RangeResult result;
@@ -5939,9 +5939,8 @@ public:
 		state VersionedBTree::BTreeCursor cur;
 		wait(self->m_tree->initBTreeCursor(&cur, self->m_tree->getLastCommittedVersion()));
 
-		state Reference<FlowLock> readLock = self->m_concurrentReads;
-		wait(readLock->take());
-		state FlowLock::Releaser releaser(*readLock);
+		wait(self->m_concurrentReads.take());
+		state FlowLock::Releaser releaser(self->m_concurrentReads);
 		++g_redwoodMetrics.opGet;
 
 		wait(cur.seekGTE(key, 0));
@@ -5967,9 +5966,8 @@ public:
 		state VersionedBTree::BTreeCursor cur;
 		wait(self->m_tree->initBTreeCursor(&cur, self->m_tree->getLastCommittedVersion()));
 
-		state Reference<FlowLock> readLock = self->m_concurrentReads;
-		wait(readLock->take());
-		state FlowLock::Releaser releaser(*readLock);
+		wait(self->m_concurrentReads.take());
+		state FlowLock::Releaser releaser(self->m_concurrentReads);
 		++g_redwoodMetrics.opGet;
 
 		wait(cur.seekGTE(key, 0));
@@ -6001,7 +5999,7 @@ private:
 	Future<Void> m_init;
 	Promise<Void> m_closed;
 	Promise<Void> m_error;
-	Reference<FlowLock> m_concurrentReads;
+	FlowLock m_concurrentReads;
 
 	template <typename T>
 	inline Future<T> catchError(Future<T> f) {
