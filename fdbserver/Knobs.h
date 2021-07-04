@@ -637,6 +637,7 @@ public:
 	int REDWOOD_DEFAULT_EXTENT_READ_SIZE; // Extent read size for Redwood files
 	int REDWOOD_EXTENT_CONCURRENT_READS; // Max number of simultaneous extent disk reads in progress.
 	int REDWOOD_KVSTORE_CONCURRENT_READS; // Max number of simultaneous point or range reads in progress.
+	bool REDWOOD_KVSTORE_RANGE_PREFETCH; // Whether to use range read prefetching
 	double REDWOOD_PAGE_REBUILD_MAX_SLACK; // When rebuilding pages, max slack to allow in page
 	int REDWOOD_LAZY_CLEAR_BATCH_SIZE_PAGES; // Number of pages to try to pop from the lazy delete queue and process at
 	                                         // once
